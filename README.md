@@ -14,11 +14,11 @@ The `optgr` command (via the `ogtpr` syntax) implements the sequential data-grap
 You can install the latest version directly from this GitHub repository by typing the following command in Stata:
 
 ```stata
-net install optgr, from("[https://raw.githubusercontent.com/Araar-Abdelkrim/optgr/main](https://raw.githubusercontent.com/Araar-Abdelkrim/optgr/main)") replace
+net install optgr, from("https://raw.githubusercontent.com/Araar-Abdelkrim/optgr/main") replace
 ```
 
 ## Datasets Included
-The package includes the replication dataset **bkf98I.dta** (Enquête Prioritaire II of Burkina Faso, 1998) used in the methodological paper. Once installed, you can load it directly in Stata.
+The package includes the replication dataset **bkf98I.dta** (EnquÃªte Prioritaire II of Burkina Faso, 1998) used in the methodological paper. Once installed, you can load it directly in Stata.
 
 ## Usage
 To run the included example script:
