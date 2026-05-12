@@ -1,0 +1,247 @@
+/*************************************************************************/
+/* DASP  : Distributive Analysis Stata Package  (version 3.01)            */
+/*************************************************************************/
+/* Conceived and programmed by Dr. Araar Abdelkrim   (2006-2026)          */
+/* Universite Laval, Quebec, Canada                                      */
+/* email : aabd@ecn.ulaval.ca                                            */
+/* Phone : 1 418 656 7507                                                */
+/*************************************************************************/ 
+/* ogtpr.dlg                                                          */
+/*************************************************************************/ 
+
+
+VERSION 15.0
+
+INCLUDE _std_xlarge
+DEFINE  _dlght 380
+DEFINE  _dlgwd 890
+INCLUDE header
+
+
+DIALOG main, label("DASP 3.0 | OGTPR: Poverty and optimal targeting by groups --> ogtpr command") tabtitle("Main")
+
+BEGIN
+  
+   
+ GROUPBOX intvar       10     10    430  150,                      ///
+           label("Variables of interest: ")
+           
+
+
+  
+  TEXT     tx_var1      20    +25    150      .,                 ///
+             label("Welfare variable:   ")  
+  VARNAME  vn_y      150    @     280      .,                
+
+
+           
+  TEXT     tx_var2      20    +25    150      .,                 ///
+           label("Size  variable:   ")  
+  VARNAME  vn_hs      150    @     280      .,                 ///
+           option(hsize) 
+  
+
+ 
+           
+  TEXT     tx_var3      20    +25    150      .,                 ///
+           label("Group  variable:   ")  
+  VARNAME  vn_gr      150    @     280      .,                 ///
+           option(hgroup) 
+  
+
+      
+ 
+
+           
+  GROUPBOX chk_per  450    10  430 150,                         ///
+           label("Options and parameters: ")
+
+
+
+
+  
+    TEXT txt_al     +10    +25    130      .,                 ///  
+                  label("Parameter alpha:   ")                           
+       
+     EDIT  ed_al    +130    @     260      .,                 ///
+              option(alpha)    default(0)    
+           
+  
+           
+   
+   TEXT txt_pl     460     +25    130      .,                 ///  
+                  label("Poverty line (z):   ")        
+   
+   EDIT    ed_pl   +130    @     260      .,                 ///
+           default(10000) option(pline)	  	             ///
+		   
+		   
+    TEXT txt_tr     460     +25    130      .,                 ///  
+                  label("Per capita transfer:   ")        
+   
+   EDIT    ed_tr   +130    @     260      .,                 ///
+           default(1000) option(trans)	  	             ///
+       		
+    TEXT txt_par     460     +25    130      .,                 ///  
+                  label("Number of parts:   ")        
+   
+   EDIT    ed_par   +130    @     260      .,                 ///
+           default(100) option(part)	
+   
+   DEFINE _x _xsetbu
+     DEFINE _y 240
+     
+  
+END
+
+
+
+
+
+
+DIALOG resop,  tabtitle("Results")
+
+BEGIN
+					
+SPINNER  sp_dec    10       25      50	  .,		        /*
+   		*/ label("Decimals")				/*
+   		*/ min(0) default(3) max(12)				/*
+  		*/ option(dec)
+
+TEXT     sp_txt  70      25      100	  .,		                /*
+   		*/ label("Number of decimals")	
+   		
+			 
+CHECKBOX   chk_dif     10    +35    250    .,                   ///
+             label("Estimate the change in aggregate poverty") option(ered) default(0)
+
+END
+
+
+LIST cb_lan
+BEGIN
+  English
+  Franais
+END
+
+
+LIST cb_lan_val
+BEGIN
+  en
+  fr
+END
+
+
+
+SCRIPT PREINIT
+BEGIN
+	create BOOLEAN has_cond1
+	create BOOLEAN has_cond2	
+END
+
+LIST cond_change
+BEGIN
+	script cond1
+	script cond2	
+END
+
+
+SCRIPT cond1
+BEGIN
+	has_cond1.settrue
+	has_cond2.setfalse
+	program check_conds
+END
+
+SCRIPT cond2
+BEGIN
+	has_cond1.setfalse
+	has_cond2.settrue
+	program check_conds
+END
+
+
+
+
+PROGRAM check_conds
+BEGIN
+
+if (has_cond1){
+call resop.ed_tit.setvalue "Table ##: Optimal targeting by..."
+}
+
+if has_cond2{
+call resop.ed_tit.setvalue "Tableau ##: Ciblage optimal par..."
+}
+
+
+
+END
+
+
+PROGRAM resop_xls
+BEGIN
+if resop.ck_xls  {
+call resop.tx_nxfile.enable
+call resop.fnamex.enable
+call resop.tx_she.enable
+call resop.ed_she.enable
+call resop.tx_lan.enable
+call resop.cb_lan.enable
+call resop.tx_tit.enable
+call resop.ed_tit.enable
+}
+
+if !resop.ck_xls {
+call resop.tx_nxfile.disable
+call resop.fnamex.disable
+call resop.tx_she.disable
+call resop.ed_she.disable
+call resop.tx_lan.disable
+call resop.cb_lan.disable
+call resop.tx_tit.disable
+call resop.ed_tit.disable
+}
+END
+
+
+
+HELP hlp1,   view("help ogtpr")
+RESET res1
+
+PROGRAM command
+BEGIN
+	put "ogtpr "
+	require  main.vn_y
+	varlist [main.vn_y]
+	
+	beginoptions  
+	                require  main.vn_gr
+	                optionarg main.vn_gr
+	                optionarg main.vn_hs
+	                
+		       
+			optionarg main.ed_al
+			optionarg main.ed_pl
+			optionarg main.ed_tr
+			optionarg main.ed_par
+
+	
+			
+			if !resop.chk_dif.isdefault(){
+			optionarg resop.chk_dif
+			}
+
+			if !resop.sp_dec.isdefault() {
+			optionarg resop.sp_dec
+			}
+					
+			
+		    
+		        
+		       
+	endoptions
+	
+	
+	
+END

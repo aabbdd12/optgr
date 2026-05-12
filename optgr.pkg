@@ -1,0 +1,21 @@
+v 3
+d optgr. Optimal Group Targeting for Poverty Reduction
+d
+d Author: Araar Abdelkrim
+d Universite Laval & Partnership for Economic Policy (PEP)
+d Support: aabd@ecn.ulaval.ca
+d
+d Distribution-Date: 20260512
+d
+d Description:
+d This package implements the sequential data-graph algorithm of Araar 
+d and Tiberti (2017) for optimal anti-poverty group targeting under a 
+d fixed per-capita budget. It includes a vectorised implementation for 
+d speedup and resolves the double-inflection problem for alpha=0.
+d
+f ogtpr.ado
+f ogtpr.sthlp
+f ogtpr.dlg
+f bkf98I.dta
+f example.do
+f Poverty&OptimalGroupTargeting_Araar_Mayo_2026.pdf

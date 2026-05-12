@@ -18,7 +18,7 @@ net install optgr, from("[https://raw.githubusercontent.com/Araar-Abdelkrim/optg
 ```
 
 ## Datasets Included
-The package includes the replication dataset **bkf98I.dta** (EnquÃªte Prioritaire II of Burkina Faso, 1998) used in the methodological paper. Once installed, you can load it directly in Stata.
+The package includes the replication dataset **bkf98I.dta** (Enquête Prioritaire II of Burkina Faso, 1998) used in the methodological paper. Once installed, you can load it directly in Stata.
 
 ## Usage
 To run the included example script:

@@ -1,0 +1,8 @@
+v 3
+d OPTGR: Optimal Group Targeting for Poverty Reduction
+d
+d Author: Araar Abdelkrim
+d Universite Laval & Partnership for Economic Policy (PEP)
+d Support: aabd@ecn.ulaval.ca
+d
+p optgr Optimal Group Targeting for Poverty Reduction
