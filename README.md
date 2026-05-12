@@ -14,7 +14,7 @@ The `optgr` command (via the `ogtpr` syntax) implements the sequential data-grap
 You can install the latest version directly from this GitHub repository by typing the following command in Stata:
 
 ```stata
-net install optgr, from("[https://raw.githubusercontent.com/aabbdd12/optgr/main](https://raw.githubusercontent.com/aabbdd12/optgr/main)") replace
+net install gepwreg, from("https://raw.githubusercontent.com/aabbdd12/optgr/main") replace
 ```
 
 ## Datasets Included
