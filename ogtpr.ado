@@ -1,36 +1,130 @@
+
 /*************************************************************************/
 /* Optimal Group Targeting & Poverty Reduction                           */
 /*************************************************************************/
 /* Conceived and programmed by Dr. Araar Abdelkrim  02-2017              */
-/* Updated with Mata vectorisation          05-2025                      */
+/* Mata vectorisation                               05-2025              */
 /* Universite Laval , Quebec, Canada                                     */
-/* email : aabd@ecn.ulaval.ca                                            */
-/*************************************************************************/
-/* module : OGTPR                                                        */
 /*************************************************************************/
 
 set more off
-#delim ;
 
-/*************************************************************************/
-/* tgpr22_mata : Mata-vectorised version of tgpr22                       */
-/* Replaces the inner forvalues j loop with matrix operations            */
-/* Result: identical to original; speedup: 3x-8x depending on alpha     */
-/*************************************************************************/
+/* =====================================================================
+   MATA FUNCTION  (defined in #delimit cr mode — multi-line OK)
+   _tgpr_set() computes GTPR and sets Stata locals directly.
+   No return value, no _res variable, no continue statement needed.
+   ===================================================================== */
+#delimit cr
+
+capture mata: mata drop _tgpr_set()
+
+mata:
+void _tgpr_set(
+    string scalar yvar,      /* Stata variable name for income   */
+    string scalar wvar,      /* Stata variable name for weight   */
+    real scalar   al,        /* FGT alpha parameter              */
+    real scalar   z,         /* poverty line                     */
+    real scalar   phig,      /* population share of group        */
+    real scalar   ra_max,    /* grid upper bound (GPC units)     */
+    real scalar   P,         /* number of grid partitions        */
+    string scalar i_str)     /* group index as string e.g. "1"  */
+{
+    real scalar    fw_sum, j, gj, fj, maxth, idx, nr, step
+    real colvector y, w, poor, gap_i, rp, new_gap, ra, gpc
+    real rowvector theta
+
+    y  = st_data(., yvar)
+    w  = st_data(., wvar)
+
+    /* Handle degenerate case: no budget or no poor */
+    if (ra_max <= 0) {
+        st_local("gtrans" + i_str, "0")
+        st_local("dcp"    + i_str, "0")
+        st_local("max"    + i_str, "0")
+        return
+    }
+
+    fw_sum = quadsum(w)
+    poor   = (y :< z)
+    gap_i  = (z :- y) :* poor
+    nr     = rows(y)
+    step   = ra_max / P
+
+    /* Grid: ra[j] = (j-1)*step, j=1..P */
+    ra  = (0::(P-1)) :* step      /* P x 1 */
+    gpc = ra :/ phig               /* P x 1 */
+
+    /* theta vector: skip j=1 (ra=0), initialise via transpose */
+    theta = ra' :* 0               /* 1 x P, all zeros */
+
+    for (j=2; j<=P; j++) {
+        gj = gpc[j,1]              /* explicit scalar extraction */
+
+        if (al == 0) {
+            rp = poor :* ((y :+ gj) :> z)
+        }
+        else if (al == 1) {
+            rp = poor :* rowmin((J(nr,1,gj), gap_i)) :/ z
+        }
+        else {
+            new_gap = rowmax((J(nr,1,0), gap_i :- gj))
+            rp      = poor :* ((gap_i:/z):^al :- (new_gap:/z):^al)
+        }
+
+        fj = phig * quadsum(w :* rp) / fw_sum
+        if (ra[j,1] > 0) theta[1,j] = fj / ra[j,1]
+    }
+
+    /* Argmax of theta */
+    maxth = max(theta)
+    idx   = 0
+    if (maxth > 0) {
+        for (j=2; j<=P; j++) {
+            if (theta[1,j] >= maxth) {
+                idx = j
+                break
+            }
+        }
+    }
+
+    /* Set Stata locals directly — no return value, no _res indexing */
+    if (idx == 0) {
+        st_local("gtrans" + i_str, "0")
+        st_local("dcp"    + i_str, "0")
+    }
+    else {
+        st_local("gtrans" + i_str, strofreal(ra[idx,1]))
+        st_local("dcp"    + i_str, strofreal(theta[1,idx]))
+    }
+    st_local("max" + i_str, strofreal(ra_max))
+}
+end
+
+/* =====================================================================
+   STATA PROGRAMS  (#delimit ; mode)
+   ===================================================================== */
+#delimit ;
+
+
+/* -------------------------------------------------------------------- */
+/* tgpr22 : one mata: call per group, no continue, no _res variable     */
+/* -------------------------------------------------------------------- */
 capture program drop tgpr22;
 program define tgpr22, rclass;
-version 11.0;
+version 9.2;
 args www yyy al type pline min max gr preci;
 local maxa = `max';
 
 forvalues i=1/$indica {;
   local max = `maxa';
   preserve;
+
   qui sum `www';
   local s1 = r(sum);
   qui sum `www' if (`gr'==gn1[`i']);
   local s2 = r(sum);
   local phig = `s2'/`s1';
+
   if ("`gr'"~="") qui keep if (`gr'==gn1[`i']);
   cap drop if `yyy'>=.;
   cap drop if `www'>=.;
@@ -42,91 +136,17 @@ forvalues i=1/$indica {;
   local mgap`i' = `r(max)';
   global mgap`i' = `r(max)';
 
-  /* ---- Mata block: vectorised GTPR computation ---- */
+  /* ra_max = min(budget/phig, max_individual_gap) */
   local max = min(`max'/`phig', `mgap`i'');
-  local pas = (`max'-`min')/`preci';
 
-  mata: {
-    /* Load data into Mata */
-    y    = st_data(., "`yyy'");
-    w    = st_data(., "`www'");
-    al   = `al';
-    z    = `pline';
-    phig = `phig';
-    mn   = `min';
-    pas  = `pas';
-    P    = `preci';
+  /* Single Mata call: computes GTPR and sets gtrans`i', dcp`i', max`i' */
+  mata: _tgpr_set("`yyy'", "`www'", `al', `pline', `phig', `max', `preci', "`i'") ;
 
-    /* Poor indicator and gaps */
-    poor  = (y :< z);
-    gap_p = (z :- y) :* poor;
-
-    n     = rows(y);
-    fw_sum = quadsum(w);
-
-    /* Grid: ra[j] = mn + (j-1)*pas, j=1..P */
-    ra = mn :+ (0::(P-1)) :* pas;    /* P x 1 */
-    gpc = ra :/ phig;                 /* P x 1 */
-
-    /* Matrix of individual poverty reductions: n x P */
-    if (al == 0) {
-      /* rp[i,j] = 1 if poor[i] and y[i]+gpc[j]>z */
-      R = poor :* ((y :+ gpc') :> z);    /* n x P */
-    }
-    else if (al == 1) {
-      /* rp[i,j] = min(gpc[j], z-y[i]) / z  if poor */
-      gaps = (z :- y) :* poor;            /* n x 1 */
-      R    = poor :* (rowmin(gpc' ,
-               gaps :* J(1,P,1)) :/ z);   /* n x P */
-      /* rowmin across rows -- use colmin trick */
-      G_mat = J(n,1,1) * gpc';            /* n x P  = gpc broadcast */
-      gaps_mat = gaps * J(1,P,1);         /* n x P */
-      R = poor :* (rowmin((G_mat , gaps_mat) /*wrong*/ ) :/ z);
-      /* correct approach: element-wise min */
-      R = poor :* (min((G_mat \ gaps_mat)) );
-      /* simplest correct form: */
-      R = J(n,P,0);
-      for (j=1; j<=P; j++) {
-        R[.,j] = poor :* (min((gpc[j], (z:-y))) :/ z);
-      };
-    }
-    else {
-      R = J(n,P,0);
-      for (j=1; j<=P; j++) {
-        gj = gpc[j];
-        R[.,j] = poor :* ((gap_p:/z):^al :- (rowmax((J(n,1,0), (gap_p:-J(n,1,gj)))):/z):^al);
-      };
-    };
-
-    /* ftgpr[j] = phig * mean_w(R[.,j]) */
-    ftgpr = phig :* (w' * R) :/ fw_sum;   /* 1 x P */
-
-    /* theta[j] = ftgpr[j] / ra[j], j>=2 */
-    theta = J(1,P,0);
-    for (j=2; j<=P; j++) {
-      theta[j] = ftgpr[j] / ra[j];
-    };
-
-    /* Best */
-    idx = .;
-    maxth = max(theta);
-    for (j=P; j>=2; j--) {
-      if (theta[j] == maxth) { idx = j; break; }
-    };
-
-    if (idx == .) {
-      st_local("gtrans`i'", "0");
-      st_local("dcp`i'",    "0");
-    }
-    else {
-      st_local("gtrans`i'", strofreal(ra[idx]));
-      st_local("dcp`i'",    strofreal(theta[idx]));
-    };
-    st_local("max`i'", strofreal(`max'));
-  };
   restore;
 };
 
+
+/* Select group with highest efficiency theta */
 local v = 1;
 local mv = `v';
 local maxdcp = `dcp1';
@@ -145,9 +165,9 @@ return scalar ogr = `mv';
 end;
 
 
-/***************************************/
-/*  perfect-reduc                      */
-/***************************************/
+/* -------------------------------------------------------------------- */
+/* perfectred                                                            */
+/* -------------------------------------------------------------------- */
 capture program drop perfectred;
 program define perfectred, rclass;
 syntax varlist(min=1 max=1) [, FWeight(string) PLINE(string) ALpha(real 0) TRANS(real 100000)];
@@ -188,9 +208,9 @@ return scalar pr = `rs2'-`rs1';
 end;
 
 
-/***************************************/
-/* pfgt                                */
-/***************************************/
+/* -------------------------------------------------------------------- */
+/* pfgt                                                                  */
+/* -------------------------------------------------------------------- */
 capture program drop pfgt;
 program define pfgt, rclass;
 syntax varlist(min=1 max=1) [, FWeight(string) HGroup(string) GNumber(integer 1) PLINE(string) ALpha(real 0) type(string)];
@@ -210,15 +230,17 @@ return scalar pfgt = `pfgt';
 end;
 
 
-/***************************************/
-/* ogtpr  (main program, unchanged)    */
-/***************************************/
+/* -------------------------------------------------------------------- */
+/* ogtpr  (main — identical interface to original)                      */
+/* -------------------------------------------------------------------- */
 capture program drop ogtpr;
 program define ogtpr, rclass;
-version 11.0;
+version 9.2;
 syntax varlist(min=1)[, HSize(varname) HGroup(varname) ALpha(real 0)
   PLine(real 100000) TRANS(real 100000) PART(int 400) DEC(int 3) ered(real 0)];
-
+  
+  timer clear 1 ;
+   
 if ("`hgroup'"!="") {;
   preserve;
   capture {;
@@ -234,6 +256,7 @@ if ("`hgroup'"!="") {;
   };
   restore;
   qui tabulate `hgroup', matrow(gn);
+  cap drop gn1;
   svmat int gn;
   global indica=r(r);
   tokenize `varlist';
@@ -275,12 +298,12 @@ forvalues k=1/$indica {;
   if ("`hgroup'"!="") {;
     local kk=gn1[`k'];
     local k1=gn1[1];
-    local label`f'  : label (`hgroup') `kk';
+    local label`k'  : label (`hgroup') `kk';
     local labelg1   : label (`hgroup') `k1';
     if ("`label1'"=="")   local labelg1  = "Group: `k1'";
-    if ("`label`f''"=="") local label`f' = "Group: `kk'";
-    local ll=max(`ll',length("`label`f''"));
-    qui replace `Variable' = "`label`f''" in `k';
+    if ("`label`k''"=="") local label`k' = "Group: `kk'";
+    local ll=max(`ll',length("`label`k''"));
+    qui replace `Variable' = "`label`k''" in `k';
     pfgt `1', fweight(`fw') pline(`pline') alpha(`alpha') hgroup(`hgroup') gnumber(`kk') type(nor);
     qui replace `EST1' = `r(pfgt)' in `k';
   };
@@ -314,7 +337,9 @@ local costag=`r(gtrans)';
 local cost_`mv'=min(`costag',`dcost');
 local ocost_`mv'=`cost_`mv'';
 local tcost=0;
-forvalues z=1/$indica {; local tcost=`tcost'+(`cost_`z''); };
+forvalues z=1/$indica {;
+  local tcost=`tcost'+(`cost_`z'');
+};
 local dcost=`trans'-`tcost';
 local h=1;
 
@@ -322,6 +347,7 @@ qui sum `fw';
 local s2=r(sum);
 forvalues k=1/$indica {;
   local f=`k';
+  local label`f' = "``k''";
   qui sum `fw' if `hgroup'==gn1[`f'];
   local s1_`k'=r(sum);
   local phi_`k'=`s1_`k''/`s2';
@@ -332,30 +358,44 @@ dis "Sequence ..." 1 ":   Remaining p.c. budget " %10.3f `dcost' " over " %10.3f
 
 local loop=1;
 while `dcost'>0 & `loop'==1 {;
+
   tempvar ytr;
   qui gen `ytr'=`1';
   forvalues g=1/$indica {;
     local tmp=gn1[`g'];
     qui replace `ytr'=`ytr'+(`cost_`g''/`phi_`g'')*(`hgroup'==`tmp');
   };
+
   local npart=`part';
   if (`alpha'!=0) local npart=max(2,int((`dcost'/`trans')*`part'));
   tgpr22 `fw' `ytr' `alpha' `type' `pline' 0 `dcost' `hgroup' `npart';
+
   local tmp=`r(ogr)';
   local mv=`tmp';
+  local omv=`mv';
   local costag=`r(gtrans)';
-  if `r(gtrans)'==0 { local loop=0; };
+  if `r(gtrans)'==0 {;
+    local loop=0;
+  };
+
   local cost_`mv'=`cost_`mv''+min(`costag',`dcost');
+
   local tcost=0;
-  forvalues z=1/$indica {; local tcost=`tcost'+(`cost_`z''); };
+  forvalues z=1/$indica {;
+    local tcost=`tcost'+(`cost_`z'');
+  };
+
   local dcost=`trans'-`tcost';
+
   if `dcost'<=`trans'/10000 {;
     local cost_`mv'=`cost_`mv''+`dcost';
     local dcost=0;
   };
+
   if (`cost_`mv''==$mgap`mv') local comp_`mv'=0;
   local h=`h'+1;
   dis "Sequence ..." `h' ":   Remaining p.c. budget " %10.3f `dcost' " over " %10.3f `trans';
+
 };
 
 cap drop `1'_tr;
@@ -385,7 +425,7 @@ if ("`hsize'"  !="") di as text "{col 5}Household size  :  `hsize'";
 if ("`hweight'"!="") di as text "{col 5}Sampling weight :  `hweight'";
 if ("`hgroup'" !="") di as text "{col 5}Group variable  :  `hgroup'";
 di as text "{col 5}Parameter alpha : " %5.2f `alpha';
-di as text "{col 5}[tgpr22: Mata-vectorised -- Araar 2025]";
+di as text "{col 5}[Mata-vectorised -- Araar 2025]";
 .`table'.sep, top;
 .`table'.titles "Group  " "Fgt Index" "Population " "  Optimal G.P.C. " " Optimal P.C.";
 .`table'.titles "       " "         " "   Share   " "Transfer" "Transfer";
@@ -407,7 +447,7 @@ if (`ered'==1) {;
   capture findfile difgt.ado;
   local filelist `"`r(fn)'"';
   if "`filelist'"=="" {;
-    di in r "The DASP difgt.ado not found. Install DASP from: http://dasp.ecn.ulaval.ca";
+    di in r "DASP difgt.ado not found. Install from: http://dasp.ecn.ulaval.ca";
     exit 198;
   };
   cap drop `1'_tr;
